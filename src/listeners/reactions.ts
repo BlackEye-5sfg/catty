@@ -37,7 +37,7 @@ export function createReactionListeners({
 			| ListenerEventData["MESSAGE_REACTION_REMOVE"]
 	) => {
 		const client = getClient()
-		if (data.user.id === client.clientId) return
+		if (data.user.id === String(client.clientId)) return
 
 		const allowed = await allowedDiscordUser(
 			data.guild?.id ?? data.guild_id,

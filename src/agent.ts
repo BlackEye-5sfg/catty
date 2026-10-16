@@ -27,6 +27,10 @@ import { GatewayIntents, GatewayPlugin } from "@buape/carbon/gateway"
 import {
 	type AgentSession,
 	createAgentSession,
+	createCodemodeExtension,
+	createMcpExtension,
+	createToolSearchExtension,
+	DefaultPackageManager,
 	DefaultResourceLoader,
 	getAgentDir,
 	ModelRegistry,
@@ -55,6 +59,7 @@ export async function startCatty(options?: { newSession?: boolean }) {
 		/^~(?=$|\/)/,
 		homedir()
 	)
+	process.env.PI_CODING_AGENT_DIR = agentDir
 	console.log(`[catty] QMD memory loaded into pi context: ${memoryPath}`)
 	console.log(
 		`[catty] system prompt sent to pi:\n---\n${cattySystemPrompt}\n---`
@@ -81,8 +86,13 @@ export async function startCatty(options?: { newSession?: boolean }) {
 		)
 
 	const settingsManager = SettingsManager.create(workspace, agentDir, {
-		projectTrusted: false
+		projectTrusted: true
 	})
+	const resources = await new DefaultPackageManager({
+		cwd: workspace,
+		agentDir,
+		settingsManager
+	}).resolve()
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: workspace,
 		agentDir,
@@ -91,7 +101,29 @@ export async function startCatty(options?: { newSession?: boolean }) {
 			join(import.meta.dir, "..", "skills"),
 			join(workspace, "skills")
 		],
-		additionalExtensionPaths: [join(workspace, ".pi/extensions")],
+		// Resolve before loading so blacklisted extensions never execute.
+		noExtensions: true,
+		additionalExtensionPaths: resources.extensions
+			.filter(({ path, enabled, metadata }) => {
+				if (!enabled) return false
+				if (
+					/(?:^|[/\\:])pi-mcp-adapter(?:$|[/\\@#.]|\.git)/.test(
+						`${metadata.source}/${path}`
+					)
+				) {
+					console.warn(
+						`[pi] blocked pi-mcp-adapter: ${path}. Use built-in MCP with .pi/mcp.json instead.`
+					)
+					return false
+				}
+				return true
+			})
+			.map(({ path }) => path),
+		extensionFactories: [
+			createCodemodeExtension(),
+			createToolSearchExtension(),
+			createMcpExtension()
+		],
 		agentsFilesOverride: (current) => ({
 			agentsFiles: [
 				...current.agentsFiles.filter(
@@ -233,6 +265,7 @@ export async function startCatty(options?: { newSession?: boolean }) {
 				console.log("[migration] turn finished")
 		})
 		try {
+			await migrationSession.bindExtensions({})
 			for (const prompt of prompts) {
 				text = ""
 				thinking = ""
@@ -309,6 +342,7 @@ export async function startCatty(options?: { newSession?: boolean }) {
 				? { thinkingLevel: config.pi.thinking }
 				: {})
 		})
+		await session.bindExtensions({})
 		return { session, modelFallbackMessage }
 	}
 
@@ -522,8 +556,8 @@ export async function startCatty(options?: { newSession?: boolean }) {
 			return session
 		}
 	})
-	const createSeparateJobsSession = () =>
-		createAgentSession({
+	const createSeparateJobsSession = async () => {
+		const result = await createAgentSession({
 			cwd: workspace,
 			agentDir,
 			modelRuntime,
@@ -536,6 +570,9 @@ export async function startCatty(options?: { newSession?: boolean }) {
 				? { thinkingLevel: config.pi.thinking }
 				: {})
 		})
+		await result.session.bindExtensions({})
+		return result
+	}
 	let separateJobsRuntime: Promise<PiRuntime> | undefined
 	const getSeparateJobsRuntime = () => {
 		separateJobsRuntime ??= (async () => {
@@ -944,7 +981,7 @@ ${content}
 			data: ListenerEventData["MESSAGE_CREATE"],
 			client: Client
 		) {
-			if (data.author.id === client.clientId) {
+			if (data.author.id === String(client.clientId)) {
 				return
 			}
 
