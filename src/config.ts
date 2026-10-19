@@ -209,6 +209,11 @@ export const config = Bun.TOML.parse(configText) as {
 	token: string
 	verbose: boolean
 	port?: number
+	componentHandlers?: {
+		prefix: string
+		command: string[]
+		timeoutSeconds?: number
+	}[]
 	pi?: {
 		workspace?: string
 		agentDir?: string
