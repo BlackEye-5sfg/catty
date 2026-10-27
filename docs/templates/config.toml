@@ -13,6 +13,13 @@ verbose = false
 # Local HTTP server port. Use a unique port per named service running at the same time.
 # port = 7990
 
+# Optional deterministic local component handlers. Commands run in the pi workspace.
+# See docs/component-handlers.md; handlers must enforce their own action safety.
+# [[componentHandlers]]
+# prefix = "ops:"
+# command = ["/usr/bin/python3", "scripts/ops_dispatch.py"]
+# timeoutSeconds = 600
+
 # pi workspace/session/model settings.
 [pi]
 # Workspace directory Catty exposes to pi. Default: ~/.catty/workspace.
