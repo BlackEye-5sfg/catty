@@ -22,3 +22,33 @@ A plain `response.content` is also supported. The bridge forces ephemeral respon
 Child output is limited to 32 KiB. Timeouts default to 300 seconds, clamp to 1–900 seconds, and kill the direct child. Stderr is discarded to prevent private execution details leaking into harness logs. Killing the child does not guarantee any external operation stopped: a side-effecting handler must persist a consumed/running state BEFORE acting and must treat interruptions as uncertain, not safe to retry. Exactly-once external execution cannot be guaranteed by a UI handler alone.
 
 Handlers are matched in order; first nonempty matching prefix wins. Missing handler configuration preserves existing model routing. Configuration is loaded on Catty startup; restart to activate changes. This is opt-in and grants no permissions by itself.
+
+## Local v0.6.1 compatibility checks
+
+The local dispatcher patch applies to v0.6.1 without changing its authorization,
+normalized metadata or fail-closed branch. Upstream's deferred-response changes
+apply to the ordinary model-routed component path; claimed local handlers still
+complete their own ephemeral response and return before that path.
+
+Build v0.6.1 with **both** entrypoints, as in its release scripts. The worker is
+not optional; a successful single-entrypoint compile does not prove Codemode works.
+
+```sh
+bun test
+bun run typecheck
+bun build src/index.ts ./src/extensions/codemode/worker.ts --compile \
+  --outfile /private/staging/catty --external '@node-llama-cpp/*'
+bun build src/codemode-runtime.smoke.ts ./src/extensions/codemode/worker.ts --compile \
+  --outfile /private/staging/codemode-smoke --external '@node-llama-cpp/*'
+(cd /tmp && /private/staging/codemode-smoke)
+/private/staging/catty help
+```
+
+The smoke program uses the real SDK Codemode executor with synthetic tools and
+no Discord/model/MCP credentials or Catty configuration. It asserts that WASM is
+embedded, the compiled worker starts, discovery and one nested tool call work,
+and host `process`/`fetch` are not exposed to the sandbox. It does not prove live
+gateway readiness or real MCP operation after deployment. Do not use `--version`
+as a smoke flag: this release does not implement it and unknown flags can start
+Catty. Compile/test success is not activation permission; preserve the current
+binary and obtain explicit approval before replacement/restart.
